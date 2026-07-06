@@ -1,10 +1,3 @@
-// OpenAI-compatible + CF-generic endpoints, all sharing one account-pool
-// rotation strategy with retry, 429 cooldown, backpressure-correct streaming,
-// and neuron accounting. Endpoints:
-//   POST /v1/chat/completions   (OpenAI chat, stream + non-stream)
-//   POST /v1/embeddings         (OpenAI embeddings — no usage from CF, best-effort)
-//   POST /ai/run/:model         (CF generic passthrough for ANY task/model)
-
 import { Router } from "express";
 import { chatUrl, embeddingsUrl, runUrl, callNormal, callStream } from "../lib/cf.js";
 import { resolveModel } from "../lib/models.js";
@@ -22,9 +15,8 @@ function flattenContent(messages) {
 }
 
 /**
- * Run one non-streaming request across the pool, retrying on 429/network errors.
- * `buildUrl(accountId)` picks the upstream URL per attempt. `success(json)`
- * returns the Express response body and may carry `usage` for neuron accounting.
+ * Run one request across the pool, retrying on 429/network errors.
+ * `buildUrl(accountId)` picks the upstream URL per attempt.
  */
 async function withPool({ pool, maxRetries, res, buildUrl, body, stream, model, log }) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -49,7 +41,7 @@ async function withPool({ pool, maxRetries, res, buildUrl, body, stream, model, 
             res.setHeader("X-CF-Proxy-Account", account.name || String(account.id));
             prepared = true;
           }
-          // Honor backpressure: wait for drain before pulling the next chunk.
+          // Backpressure: wait for drain before pulling the next chunk.
           if (!res.write(chunk)) return new Promise((r) => res.once("drain", r));
         });
 
@@ -71,8 +63,7 @@ async function withPool({ pool, maxRetries, res, buildUrl, body, stream, model, 
       pool.markSuccess(account.id, model, result.usage);
       return res.json(result.json);
     } catch (e) {
-      // Mid-stream error: destroy so the client sees an aborted read, not a
-      // clean EOF that looks like a completed response.
+      // Mid-stream: destroy so the client sees an aborted read, not a clean EOF.
       log.warn?.(`Account ${account.name} error: ${e.message}`);
       if (res.headersSent) return res.destroy(e);
       continue;
@@ -84,7 +75,6 @@ async function withPool({ pool, maxRetries, res, buildUrl, body, stream, model, 
   return res.status(502).json({ error: "All retries failed", pool: pool.stats() });
 }
 
-// OpenAI-compatible router: /v1/chat/completions and /v1/embeddings.
 export function openaiRouter({ pool, maxRetries, log, pick }) {
   const router = Router();
 
@@ -94,7 +84,7 @@ export function openaiRouter({ pool, maxRetries, log, pick }) {
     if (!body.model) return res.status(400).json({ error: "model required" });
     const r = await resolveModel(body.model, pick, log.warn);
     if (r.error) return res.status(r.status).json({ error: r.error, ...(r.candidates ? { candidates: r.candidates } : {}) });
-    body.model = r.id; // replace with full id for upstream CF + neuron rate lookup
+    body.model = r.id;
     if (Array.isArray(body.messages)) body.messages = flattenContent(body.messages);
     return withPool({
       pool, maxRetries, res, log,
@@ -120,11 +110,10 @@ export function openaiRouter({ pool, maxRetries, log, pick }) {
   return router;
 }
 
-// Generic CF router: /ai/run/:model — passthrough for any task/model.
 export function runRouter({ pool, maxRetries, log, pick }) {
   const router = Router();
-  // Model ids contain slashes (@cf/meta/m2m100-1.2b), so use a wildcard that
-  // matches the whole remaining path. Short ids are resolved to full first.
+  // Model ids contain slashes (@cf/meta/m2m100-1.2b) — wildcard matches the
+  // whole remaining path. Short ids are resolved to full first.
   router.post("/run/*", async (req, res) => {
     const model = req.params[0];
     if (!model) return res.status(400).json({ error: "model required in path" });

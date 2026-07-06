@@ -1,11 +1,8 @@
-// Health, models, and dashboard admin API (accounts, stats, manual import).
-
 import { Router } from "express";
 import { importFrom9router } from "../lib/importer.js";
 import { NEURON_FREE_DAILY, todayUTC } from "../lib/neurons.js";
 import { getModels, invalidateModels } from "../lib/models.js";
 
-// Shape one DB row for the dashboard: expose derived neuron figures, never the key.
 function shapeAccount(row) {
   const today = todayUTC();
   const usedToday = row.neurons_day === today ? row.neurons_today : 0;
@@ -35,7 +32,6 @@ export function adminRouter({ db, pool, ninePath, log, pick }) {
 
   router.get("/health", (_req, res) => res.json({ status: "ok", pool: pool.stats() }));
 
-  // OpenAI-compatible model list, fetched live from CF (cached 10 min).
   router.get("/v1/models", async (_req, res) => {
     try {
       const models = await getModels(pick, log.warn);
@@ -53,7 +49,6 @@ export function adminRouter({ db, pool, ninePath, log, pick }) {
     }
   });
 
-  // Richer model list for the dashboard (name, description, tags).
   router.get("/api/models", async (req, res) => {
     try {
       const fresh = req.query.fresh === "1";
@@ -67,7 +62,6 @@ export function adminRouter({ db, pool, ninePath, log, pick }) {
 
   router.get("/api/stats", (_req, res) => res.json(pool.stats()));
 
-  // Full account list — the dashboard paginates/sorts client-side.
   router.get("/api/accounts", (_req, res) => {
     const rows = db.prepare("SELECT * FROM accounts ORDER BY id").all();
     res.json({ accounts: rows.map(shapeAccount), stats: pool.stats() });
@@ -76,7 +70,7 @@ export function adminRouter({ db, pool, ninePath, log, pick }) {
   router.post("/api/import", (_req, res) => {
     try {
       const result = importFrom9router(db, ninePath, log);
-      invalidateModels(); // a freshly-imported account may enable the model fetch
+      invalidateModels();
       res.json(result);
     } catch (e) {
       log.error?.(`import failed: ${e.message}`);
