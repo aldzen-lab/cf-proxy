@@ -99,7 +99,7 @@ Point 9router at this proxy as an OpenAI-compatible provider:
 | `CF_PROXY_API_KEY` | (empty) | Bearer token auth (empty = no auth) |
 | `CF_PROXY_9ROUTER_DB` | `~/.9router/db/data.sqlite` | Source DB for the import button |
 | `CF_PROXY_DB` | `./data/accounts.db` | Own accounts + neuron-counter DB |
-| `CF_PROXY_COOLDOWN_429` | `3600` | Seconds to skip an account after a 429 |
+| `CF_PROXY_COOLDOWN_429` | `90` | Seconds to skip an account after a **rate-limit** 429. A daily-neuron-limit 429 (CF error code 4006) always cools until 00:00 UTC regardless. |
 | `CF_PROXY_MAX_RETRIES` | `5` | Max accounts to try per request |
 | `CF_PROXY_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARN` / `ERROR` |
 

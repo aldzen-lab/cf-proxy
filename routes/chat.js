@@ -52,7 +52,7 @@ async function withPool({ pool, maxRetries, res, buildUrl, body, stream, model, 
           if (!res.write(chunk)) return new Promise((r) => res.once("drain", r));
         });
 
-        if (result.status === 429) { pool.mark429(account.id); continue; }
+        if (result.status === 429) { pool.mark429(account.id, result.errorCode); continue; }
         if (result.status >= 400) {
           log.warn?.(`Account ${account.name} stream -> ${result.status}: ${result.text?.slice(0, 200)}`);
           return res.status(result.status).type("application/json").send(result.text);
@@ -62,7 +62,7 @@ async function withPool({ pool, maxRetries, res, buildUrl, body, stream, model, 
       }
 
       const result = await callNormal(url, account.api_key, body);
-      if (result.status === 429) { pool.mark429(account.id); continue; }
+      if (result.status === 429) { pool.mark429(account.id, result.errorCode); continue; }
       if (result.status >= 400) {
         log.warn?.(`Account ${account.name} -> ${result.status}: ${result.text?.slice(0, 200)}`);
         return res.status(result.status).type("application/json").send(result.text);
